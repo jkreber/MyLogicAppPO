@@ -15,24 +15,77 @@
       "defaultValue": "[resourceGroup().location]",
       "allowedValues": [
         "[resourceGroup().location]",
-        "australiaeast",
-        "australiasoutheast",
-        "brazilsouth",
-        "centralus",
         "eastasia",
+        "southeastasia",
+        "centralus",
         "eastus",
         "eastus2",
-        "japaneast",
-        "japanwest",
+        "westus",
         "northcentralus",
-        "northeurope",
         "southcentralus",
-        "southeastasia",
+        "northeurope",
         "westeurope",
-        "westus"
+        "japanwest",
+        "japaneast",
+        "brazilsouth",
+        "australiaeast",
+        "australiasoutheast",
+        "southindia",
+        "centralindia",
+        "westindia",
+        "canadacentral",
+        "canadaeast",
+        "uksouth",
+        "ukwest",
+        "westcentralus",
+        "westus2"
       ],
       "metadata": {
         "description": "Location of the Logic App."
+      }
+    },
+    "azureeventgrid_1_Connection_Name": {
+      "type": "string",
+      "defaultValue": "azureeventgrid-1"
+    },
+    "azureeventgrid_1_Connection_DisplayName": {
+      "type": "string",
+      "defaultValue": "James.Kreber@McKesson.com"
+    },
+    "x12_1_Connection_Name": {
+      "type": "string",
+      "defaultValue": "x12"
+    },
+    "x12_1_Connection_DisplayName": {
+      "type": "string",
+      "defaultValue": "PurchaseOrder"
+    },
+    "x12_1_integrationAccountId": {
+      "type": "string",
+      "metadata": {
+        "description": "Integration Account ID"
+      },
+      "defaultValue": "/subscriptions/c4b85310-74a0-4c7e-a602-c4d2977e9bde/resourceGroups/rg-jkreber-final-project/providers/Microsoft.Logic/integrationAccounts/IntegrationAccount"
+    },
+    "azureblob_1_Connection_Name": {
+      "type": "string",
+      "defaultValue": "azureblob"
+    },
+    "azureblob_1_Connection_DisplayName": {
+      "type": "string",
+      "defaultValue": "inboundX12blob"
+    },
+    "azureblob_1_accountName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the storage account the connector should use."
+      },
+      "defaultValue": "inboundx12storage"
+    },
+    "azureblob_1_accessKey": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Specify a valid primary/secondary storage account access key."
       }
     }
   },
@@ -49,13 +102,177 @@
       "properties": {
         "definition": {
           "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "actions": {
+            "Decode_X12_message": {
+              "type": "ApiConnection",
+              "inputs": {
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['x12']['connectionId']"
+                  }
+                },
+                "method": "post",
+                "path": "/decode",
+                "body": "@triggerBody()?['eventType']"
+              },
+              "runAfter": {}
+            },
+            "For_each": {
+              "type": "Foreach",
+              "foreach": "@body('Decode_X12_message')?['GoodMessages']",
+              "actions": {
+                "For_each_2": {
+                  "type": "Foreach",
+                  "foreach": "@body('Decode_X12_message')?['GroupControlNumbers']",
+                  "actions": {
+                    "For_each_3": {
+                      "type": "Foreach",
+                      "foreach": "@body('Decode_X12_message')?['BadMessages']",
+                      "actions": {
+                        "Create_blob": {
+                          "type": "ApiConnection",
+                          "inputs": {
+                            "host": {
+                              "connection": {
+                                "name": "@parameters('$connections')['azureblob']['connectionId']"
+                              }
+                            },
+                            "method": "post",
+                            "path": "/datasets/default/files",
+                            "queries": {
+                              "folderPath": "/x12inbound",
+                              "name": "@triggerBody()?['subject']"
+                            },
+                            "body": "@{xml(base64ToBinary(items('For_each')?['Payload']))}@{xml(base64ToBinary(items('For_each')?['Payload']))}@{xml(base64ToBinary(items('For_each_3')?['Payload']))}"
+                          },
+                          "runAfter": {},
+                          "runtimeConfiguration": {
+                            "contentTransfer": {
+                              "transferMode": "Chunked"
+                            }
+                          }
+                        }
+                      },
+                      "runAfter": {}
+                    }
+                  },
+                  "runAfter": {}
+                }
+              },
+              "runAfter": {
+                "Decode_X12_message": [
+                  "Succeeded"
+                ]
+              }
+            }
+          },
+          "parameters": {
+            "$connections": {
+              "defaultValue": {},
+              "type": "Object"
+            }
+          },
+          "triggers": {
+            "When_a_resource_event_occurs": {
+              "type": "ApiConnectionWebhook",
+              "inputs": {
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['azureeventgrid_1']['connectionId']"
+                  }
+                },
+                "path": "/subscriptions/@{encodeURIComponent('c4b85310-74a0-4c7e-a602-c4d2977e9bde')}/providers/@{encodeURIComponent('Microsoft.EventGrid.topics')}/resource/eventSubscriptions",
+                "queries": {
+                  "x-ms-api-version": "2017-06-15-preview"
+                },
+                "body": {
+                  "properties": {
+                    "topic": "/subscriptions/c4b85310-74a0-4c7e-a602-c4d2977e9bde/resourceGroups/rg-jkreber-final-project/providers/Microsoft.EventGrid/topics/EventGridTopicFP",
+                    "destination": {
+                      "endpointType": "webhook",
+                      "properties": {
+                        "endpointUrl": "@{listCallbackUrl()}"
+                      }
+                    }
+                  }
+                }
+              },
+              "splitOn": "@triggerBody()"
+            }
+          },
           "contentVersion": "1.0.0.0",
-          "actions": {},
-          "outputs": {},
-          "parameters": {},
-          "triggers": {}
+          "outputs": {}
         },
-        "parameters": {}
+        "parameters": {
+          "$connections": {
+            "value": {
+              "x12": {
+                "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', parameters('logicAppLocation'), '/managedApis/', 'x12')]",
+                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('x12_1_Connection_Name'))]",
+                "connectionName": "[parameters('x12_1_Connection_Name')]"
+              },
+              "azureblob": {
+                "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', parameters('logicAppLocation'), '/managedApis/', 'azureblob')]",
+                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('azureblob_1_Connection_Name'))]",
+                "connectionName": "[parameters('azureblob_1_Connection_Name')]"
+              },
+              "azureeventgrid_1": {
+                "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', parameters('logicAppLocation'), '/managedApis/', 'azureeventgrid')]",
+                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('azureeventgrid_1_Connection_Name'))]",
+                "connectionName": "[parameters('azureeventgrid_1_Connection_Name')]"
+              }
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/connections', parameters('x12_1_Connection_Name'))]",
+        "[resourceId('Microsoft.Web/connections', parameters('azureblob_1_Connection_Name'))]",
+        "[resourceId('Microsoft.Web/connections', parameters('azureeventgrid_1_Connection_Name'))]"
+      ]
+    },
+    {
+      "type": "MICROSOFT.WEB/CONNECTIONS",
+      "apiVersion": "2016-06-01",
+      "name": "[parameters('azureeventgrid_1_Connection_Name')]",
+      "location": "[parameters('logicAppLocation')]",
+      "properties": {
+        "api": {
+          "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', parameters('logicAppLocation'), '/managedApis/', 'azureeventgrid')]"
+        },
+        "displayName": "[parameters('azureeventgrid_1_Connection_DisplayName')]"
+      }
+    },
+    {
+      "type": "MICROSOFT.WEB/CONNECTIONS",
+      "apiVersion": "2016-06-01",
+      "name": "[parameters('x12_1_Connection_Name')]",
+      "location": "[parameters('logicAppLocation')]",
+      "properties": {
+        "api": {
+          "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', parameters('logicAppLocation'), '/managedApis/', 'x12')]"
+        },
+        "displayName": "[parameters('x12_1_Connection_DisplayName')]",
+        "parameterValues": {
+          "integrationAccountId": "[parameters('x12_1_integrationAccountId')]",
+          "integrationAccountUrl": "[listCallbackURL(parameters('x12_1_integrationAccountId'), '2015-08-01-preview').value]"
+        }
+      }
+    },
+    {
+      "type": "MICROSOFT.WEB/CONNECTIONS",
+      "apiVersion": "2016-06-01",
+      "name": "[parameters('azureblob_1_Connection_Name')]",
+      "location": "[parameters('logicAppLocation')]",
+      "properties": {
+        "api": {
+          "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', parameters('logicAppLocation'), '/managedApis/', 'azureblob')]"
+        },
+        "displayName": "[parameters('azureblob_1_Connection_DisplayName')]",
+        "parameterValues": {
+          "accountName": "[parameters('azureblob_1_accountName')]",
+          "accessKey": "[parameters('azureblob_1_accessKey')]"
+        }
       }
     }
   ],

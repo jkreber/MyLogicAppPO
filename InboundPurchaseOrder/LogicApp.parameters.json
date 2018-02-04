@@ -3,7 +3,13 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "logicAppName": {
-      "value": null
+      "value": "PurchaseOrder"
+    },
+    "logicAppLocation": {
+      "value": "eastus"
+    },
+    "azureblob_1_accessKey": {
+      "value": "8dxrpWpUV0bMWKlc8549Y0SIcKJ7kYuVd4pbL8QHPVSENm+Qvzh98+PF8fLEfbpM0hZj+2uNmZny+lT7H1BW+g=="
     }
   }
 }
