@@ -87,6 +87,14 @@
       "metadata": {
         "description": "Specify a valid primary/secondary storage account access key."
       }
+    },
+    "gmail_1_Connection_Name": {
+      "type": "string",
+      "defaultValue": "gmail-4"
+    },
+    "gmail_1_Connection_DisplayName": {
+      "type": "string",
+      "defaultValue": "jaimekreber@gmail.com"
     }
   },
   "variables": {},
@@ -117,43 +125,54 @@
               },
               "runAfter": {}
             },
+            "Send_email": {
+              "type": "ApiConnection",
+              "inputs": {
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['gmail']['connectionId']"
+                  }
+                },
+                "method": "post",
+                "path": "/Mail",
+                "body": {
+                  "To": "jaimekreber@gmail.com",
+                  "Subject": "@triggerBody()?['eventTime']",
+                  "Body": "@triggerBody()?['eventType']"
+                }
+              },
+              "runAfter": {}
+            },
             "For_each": {
               "type": "Foreach",
               "foreach": "@body('Decode_X12_message')?['GoodMessages']",
               "actions": {
                 "For_each_2": {
                   "type": "Foreach",
-                  "foreach": "@body('Decode_X12_message')?['GroupControlNumbers']",
+                  "foreach": "@body('Decode_X12_message')?['GoodMessages']",
                   "actions": {
-                    "For_each_3": {
-                      "type": "Foreach",
-                      "foreach": "@body('Decode_X12_message')?['BadMessages']",
-                      "actions": {
-                        "Create_blob": {
-                          "type": "ApiConnection",
-                          "inputs": {
-                            "host": {
-                              "connection": {
-                                "name": "@parameters('$connections')['azureblob']['connectionId']"
-                              }
-                            },
-                            "method": "post",
-                            "path": "/datasets/default/files",
-                            "queries": {
-                              "folderPath": "/x12inbound",
-                              "name": "@triggerBody()?['subject']"
-                            },
-                            "body": "@{xml(base64ToBinary(items('For_each')?['Payload']))}@{xml(base64ToBinary(items('For_each')?['Payload']))}@{xml(base64ToBinary(items('For_each_3')?['Payload']))}"
-                          },
-                          "runAfter": {},
-                          "runtimeConfiguration": {
-                            "contentTransfer": {
-                              "transferMode": "Chunked"
-                            }
+                    "Create_blob": {
+                      "type": "ApiConnection",
+                      "inputs": {
+                        "host": {
+                          "connection": {
+                            "name": "@parameters('$connections')['azureblob']['connectionId']"
                           }
-                        }
+                        },
+                        "method": "post",
+                        "path": "/datasets/default/files",
+                        "queries": {
+                          "folderPath": "/x12inbound",
+                          "name": "@items('For_each')?['InterchangeControlNumber']"
+                        },
+                        "body": "@{xml(base64ToBinary(items('For_each_2')?['Payload']))}@{triggerBody()?['eventType']}"
                       },
-                      "runAfter": {}
+                      "runAfter": {},
+                      "runtimeConfiguration": {
+                        "contentTransfer": {
+                          "transferMode": "Chunked"
+                        }
+                      }
                     }
                   },
                   "runAfter": {}
@@ -211,6 +230,11 @@
                 "connectionId": "[resourceId('Microsoft.Web/connections', parameters('x12_1_Connection_Name'))]",
                 "connectionName": "[parameters('x12_1_Connection_Name')]"
               },
+              "gmail": {
+                "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', parameters('logicAppLocation'), '/managedApis/', 'gmail')]",
+                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('gmail_1_Connection_Name'))]",
+                "connectionName": "[parameters('gmail_1_Connection_Name')]"
+              },
               "azureblob": {
                 "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', parameters('logicAppLocation'), '/managedApis/', 'azureblob')]",
                 "connectionId": "[resourceId('Microsoft.Web/connections', parameters('azureblob_1_Connection_Name'))]",
@@ -227,6 +251,7 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Web/connections', parameters('x12_1_Connection_Name'))]",
+        "[resourceId('Microsoft.Web/connections', parameters('gmail_1_Connection_Name'))]",
         "[resourceId('Microsoft.Web/connections', parameters('azureblob_1_Connection_Name'))]",
         "[resourceId('Microsoft.Web/connections', parameters('azureeventgrid_1_Connection_Name'))]"
       ]
@@ -273,6 +298,18 @@
           "accountName": "[parameters('azureblob_1_accountName')]",
           "accessKey": "[parameters('azureblob_1_accessKey')]"
         }
+      }
+    },
+    {
+      "type": "MICROSOFT.WEB/CONNECTIONS",
+      "apiVersion": "2016-06-01",
+      "name": "[parameters('gmail_1_Connection_Name')]",
+      "location": "[parameters('logicAppLocation')]",
+      "properties": {
+        "api": {
+          "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', parameters('logicAppLocation'), '/managedApis/', 'gmail')]"
+        },
+        "displayName": "[parameters('gmail_1_Connection_DisplayName')]"
       }
     }
   ],
